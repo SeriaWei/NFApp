@@ -23,6 +23,8 @@ namespace NFApp
         private static PwmChannel _led;
         private static GpioPin _ledPin;
         private static Ssd1306 _screen;
+        private static MqttClient _client;
+        private static bool _connectedToCloud;
         public static void Main()
         {
             Configuration.SetPinFunction(18, DeviceFunction.I2C1_DATA);
@@ -39,44 +41,47 @@ namespace NFApp
 
             _ledPin = _gpioController.OpenPin(2, PinMode.Output);
             StartBluetooth();
-            SetupAndConnectNetwork();
-            ConnectToBemfa();
 
             _screen.DrawString(0, 32, "Hello", 2, true);//centered text
             _screen.Display();
 
             while (true)
             {
-                FlashTimes(1);
+                if (!_connectedToCloud)
+                {
+                    SetupAndConnectNetwork();
+                    ConnectToBemfa();
+                }
+                else
+                {
+                    FlashTimes(1);
+                }
                 Thread.Sleep(1000);
             }
         }
 
         private static void ConnectToBemfa()
         {
-            while (true)
+            try
             {
-                try
-                {
-                    MqttClient client = new MqttClient("bemfa.com", 9501, false, null, null, MqttSslProtocols.None);
-                    client.Connect("b656db78f2d642f1b74b0bb97203324a");
-                    // STEP 3: subscribe to topics you want
-                    client.Subscribe(new[] { "nano002" }, new[] { MqttQoSLevel.AtLeastOnce });
-                    client.MqttMsgPublishReceived += HandleIncomingMessage;
-                    client.ConnectionClosed += Client_ConnectionClosed;
-                    //client.Publish("nano002/set", Encoding.UTF8.GetBytes("===== Hello MQTT! ====="), null, null, MqttQoSLevel.AtLeastOnce, false);
-                    break;
-                }
-                catch
-                {
-                    FlashTimes(3);
-                }
+                _client = new MqttClient("bemfa.com", 9501, false, null, null, MqttSslProtocols.None);
+                _client.Connect("b656db78f2d642f1b74b0bb97203324a");
+                // STEP 3: subscribe to topics you want
+                _client.Subscribe(new[] { "nano002" }, new[] { MqttQoSLevel.AtLeastOnce });
+                _client.MqttMsgPublishReceived += HandleIncomingMessage;
+                _client.ConnectionClosed += Client_ConnectionClosed;
+                //client.Publish("nano002/set", Encoding.UTF8.GetBytes("===== Hello MQTT! ====="), null, null, MqttQoSLevel.AtLeastOnce, false);
+                _connectedToCloud = true;
+            }
+            catch
+            {
+                FlashTimes(3);
             }
         }
 
         private static void Client_ConnectionClosed(object sender, EventArgs e)
         {
-            ConnectToBemfa();
+            _connectedToCloud = false;
         }
 
         private static void HandleIncomingMessage(object sender, MqttMsgPublishEventArgs e)
